@@ -1,0 +1,524 @@
+library(openxlsx)
+library(eulerr) 
+library(VennDiagram)
+library(openxlsx)
+library(limma)
+library(mco)
+library(openxlsx)
+library(factoextra)
+#############
+## READ DATA
+Ori_0610_1   = read.xlsx(".../HCI Data.xlsx"  ,sheet = "061001")
+Ori_0610_2   = read.xlsx(".../HCI Data.xlsx"  ,sheet = "061002")
+Ori_0706     = read.xlsx(".../HCI Data.xlsx"  ,sheet = "0706"  )
+Ori_0725_1   = read.xlsx(".../HCI Data.xlsx"  ,sheet = "072501")
+Ori_0725_2   = read.xlsx(".../HCI Data.xlsx"  ,sheet = "072502")
+Ori_CM       = read.xlsx(".../HCI Data.xlsx"  ,sheet = "Extra-CM")
+CP_content = read.xlsx(".../60Compounds.xlsx",sheet = "Sheet2" )
+CP_content$CompoundName = stringr::str_replace_all(CP_content$CompoundName,"-","_")
+CP_content$CompoundName = make.names(CP_content$CompoundName)
+
+
+
+
+
+#############
+## LABEL GROUP
+
+group_0601 = lapply(3:ncol(Ori_0610_1), function(x)
+  
+  ifelse(length(strsplit(colnames(Ori_0610_1),"-")[[x]]) == 2,
+         strsplit(colnames(Ori_0610_1),"-")[[x]][1:(length(strsplit(colnames(Ori_0610_1),"-")[[x]])-1)],
+         paste0(strsplit(colnames(Ori_0610_1),"-")[[x]][1:(length(strsplit(colnames(Ori_0610_1),"-")[[x]])-1)],collapse = "_")
+  )
+)
+
+
+group_0602 = lapply(3:ncol(Ori_0610_2), function(x)
+  
+  ifelse(length(strsplit(colnames(Ori_0610_2),"-")[[x]]) == 2,
+         strsplit(colnames(Ori_0610_2),"-")[[x]][1:(length(strsplit(colnames(Ori_0610_2),"-")[[x]])-1)],
+         paste0(strsplit(colnames(Ori_0610_2),"-")[[x]][1:(length(strsplit(colnames(Ori_0610_2),"-")[[x]])-1)],collapse = "_")
+  )
+)
+
+group_0706 = lapply(3:ncol(Ori_0706), function(x)
+  
+  ifelse(length(strsplit(colnames(Ori_0706),"-")[[x]]) == 2,
+         strsplit(colnames(Ori_0706),"-")[[x]][1:(length(strsplit(colnames(Ori_0706),"-")[[x]])-1)],
+         paste0(strsplit(colnames(Ori_0706),"-")[[x]][1:(length(strsplit(colnames(Ori_0706),"-")[[x]])-1)],collapse = "_")
+  )
+)
+
+group_0725_1  = lapply(3:ncol(Ori_0725_1 ), function(x)
+  
+  ifelse(length(strsplit(colnames(Ori_0725_1 ),"-")[[x]]) == 2,
+         strsplit(colnames(Ori_0725_1 ),"-")[[x]][1:(length(strsplit(colnames(Ori_0725_1 ),"-")[[x]])-1)],
+         paste0(strsplit(colnames(Ori_0725_1 ),"-")[[x]][1:(length(strsplit(colnames(Ori_0725_1 ),"-")[[x]])-1)],collapse = "_")
+  )
+)
+
+group_0725_2  = lapply(3:ncol(Ori_0725_2 ), function(x)
+  
+  ifelse(length(strsplit(colnames(Ori_0725_2 ),"-")[[x]]) == 2,
+         strsplit(colnames(Ori_0725_2 ),"-")[[x]][1:(length(strsplit(colnames(Ori_0725_2 ),"-")[[x]])-1)],
+         paste0(strsplit(colnames(Ori_0725_2 ),"-")[[x]][1:(length(strsplit(colnames(Ori_0725_2 ),"-")[[x]])-1)],collapse = "_")
+  )
+)
+
+group_Extra_CM = c(rep("C",6),rep("M",6),rep("C",6),rep("M",6))
+
+group_list = c(unlist(group_0601),unlist(group_0602), unlist(group_0706),unlist(group_0725_1),unlist(group_0725_2),group_Extra_CM )
+batch <- c(rep("06101",length(group_0601)),rep("06102",length(group_0602)),
+           rep("0706",length(group_0706)),rep("07251",length(group_0725_1)),
+           rep("07252",length(group_0725_2)),rep("extra1",12),rep("extra2",12)) #批次信息
+design=model.matrix(~group_list)
+
+BatchEffect_HTC = cbind(Ori_0610_1,Ori_0610_2[,-c(1:2)],
+                        Ori_0706  [,-c(1:2)]  ,
+                        Ori_0725_1[,-c(1:2)],Ori_0725_2[,-c(1:2)],
+                        Ori_CM    [,-c(1:2)]
+                        
+)
+
+colnames(BatchEffect_HTC ) = c(
+  paste0("06101_", colnames(Ori_0610_1)),
+  paste0("06102_", colnames(Ori_0610_2[,-c(1:2)])),
+  paste0("0706_" , colnames(Ori_0706[,-c(1:2)])),
+  paste0("07251_", colnames(Ori_0725_1[,-c(1:2)])),
+  paste0("07252_", colnames(Ori_0725_2[,-c(1:2)])),
+  paste0("Extra_", colnames(Ori_CM[,-c(1:2)]))
+)
+rownames(BatchEffect_HTC) = BatchEffect_HTC[,1];BatchEffect_HTC=BatchEffect_HTC[,-c(1,2)]
+
+
+#############
+## REMOVE BATCH EFFECT
+
+Batch_limma_HTC <- removeBatchEffect(BatchEffect_HTC,batch = batch,design = design)
+Batch_limma_HTC= as.data.frame(Batch_limma_HTC)
+head(Batch_limma_HTC)
+
+###################################################
+
+
+#############
+## DELETE ABNORMAL VALUE
+
+par_CM = Batch_limma_HTC
+par_CM  = par_CM [,which(group_list %in% c("C","M"))]
+par_CM  = par_CM [,-which(colnames(par_CM ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+
+
+Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("C","M"))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+
+#############
+## CALCULATE REVERSE SCORE
+
+group_CM_2 <- as.factor(group_list[which(group_list %in% c("C","M"))][-Remove_value ])
+design_CM_2 <- model.matrix(~0+group_CM_2)
+colnames(design_CM_2) = levels(factor(group_CM_2))
+rownames(design_CM_2) = colnames(group_CM_2);design_CM_2
+norm_CM_2 <- voom(par_CM , design_CM_2, plot = TRUE)
+fit <- lmFit(norm_CM_2, design_CM_2, method = 'ls')
+contrast <- makeContrasts('C-M', levels = design_CM_2);contrast
+fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+diff_C_M <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_C_M, 10)
+diff_C_M=diff_C_M[order(-abs(diff_C_M$logFC),-diff_C_M$AveExpr),];head(diff_C_M, 10)
+head(diff_C_M )
+
+#################################
+
+par_M_GQT = Batch_limma_HTC
+par_M_GQT  = par_M_GQT [,which(group_list %in% c("M","GQD"))]
+par_M_GQT  = par_M_GQT [,-which(colnames(par_M_GQT ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("M","GQD"))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+
+group_M_GQT_2 <- as.factor(group_list[which(group_list %in% c("M","GQD"))][-Remove_value ])
+design_M_GQT_2 <- model.matrix(~0+group_M_GQT_2)
+colnames(design_M_GQT_2) = levels(factor(group_M_GQT_2))
+rownames(design_M_GQT_2) = colnames(group_M_GQT_2);design_M_GQT_2
+norm_M_GQT_2 <- voom(par_M_GQT , design_M_GQT_2, plot = TRUE)
+fit <- lmFit(norm_M_GQT_2, design_M_GQT_2, method = 'ls')
+contrast <- makeContrasts('M-GQD', levels = design_M_GQT_2);contrast
+fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+diff_M_GQT <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_M_GQT, 10)
+diff_M_GQT=diff_M_GQT[order(-abs(diff_M_GQT$logFC),-diff_M_GQT$AveExpr),];head(diff_M_GQT, 10)
+
+##################################
+par_M_Met = Batch_limma_HTC
+par_M_Met  = par_M_Met [,which(group_list %in% c("M","Metformin"))]
+par_M_Met  = par_M_Met [,-which(colnames(par_M_Met ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("M","Metformin"))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+
+group_M_Met_2 <- as.factor(group_list[which(group_list %in% c("M","Metformin"))][-Remove_value ])
+design_M_Met_2 <- model.matrix(~0+group_M_Met_2)
+colnames(design_M_Met_2) = levels(factor(group_M_Met_2))
+rownames(design_M_Met_2) = colnames(group_M_Met_2);design_M_Met_2
+norm_M_Met_2 <- voom(par_M_Met , design_M_Met_2, plot = TRUE)
+fit <- lmFit(norm_M_Met_2, design_M_Met_2, method = 'ls')
+contrast <- makeContrasts('M-Metformin', levels = design_M_Met_2);contrast
+fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+diff_M_Met <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_M_Met, 10)
+diff_M_Met=diff_M_Met[order(-abs(diff_M_Met$logFC),-diff_M_Met$AveExpr),];head(diff_M_Met, 10)
+
+
+####################################
+par_M_Gli = Batch_limma_HTC
+par_M_Gli  = par_M_Gli [,which(group_list %in% c("M","Glimepiride"))]
+par_M_Gli  = par_M_Gli [,-which(colnames(par_M_Gli ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("M","Glimepiride"))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+
+group_M_Gli_2 <- as.factor(group_list[which(group_list %in% c("M","Glimepiride"))][-Remove_value ])
+design_M_Gli_2 <- model.matrix(~0+group_M_Gli_2)
+colnames(design_M_Gli_2) = levels(factor(group_M_Gli_2))
+rownames(design_M_Gli_2) = colnames(group_M_Gli_2);design_M_Gli_2
+norm_M_Gli_2 <- voom(par_M_Gli , design_M_Gli_2, plot = TRUE)
+fit <- lmFit(norm_M_Gli_2, design_M_Gli_2, method = 'ls')
+contrast <- makeContrasts('M-Glimepiride', levels = design_M_Gli_2);contrast
+fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+diff_M_Gli <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_M_Gli, 10)
+diff_M_Gli=diff_M_Gli[order(-abs(diff_M_Gli$logFC),-diff_M_Gli$AveExpr),];head(diff_M_Gli, 10)
+
+####################################
+par_M_Aca = Batch_limma_HTC
+par_M_Aca  = par_M_Aca [,which(group_list %in% c("M","Acarbose"))]
+par_M_Aca  = par_M_Aca [,-which(colnames(par_M_Aca ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+
+Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("M","Acarbose"))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+
+group_M_Aca_2 <- as.factor(group_list[which(group_list %in% c("M","Acarbose"))][-Remove_value ])
+
+design_M_Aca_2 <- model.matrix(~0+group_M_Aca_2)
+colnames(design_M_Aca_2) = levels(factor(group_M_Aca_2))
+rownames(design_M_Aca_2) = colnames(group_M_Aca_2);design_M_Aca_2
+norm_M_Aca_2 <- voom(par_M_Aca , design_M_Aca_2, plot = TRUE)
+fit <- lmFit(norm_M_Aca_2, design_M_Aca_2, method = 'ls')
+contrast <- makeContrasts('M-Acarbose', levels = design_M_Aca_2);contrast
+fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+diff_M_Aca <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_M_Aca, 10)
+diff_M_Aca=diff_M_Aca[order(-abs(diff_M_Aca$logFC),-diff_M_Aca$AveExpr),];head(diff_M_Aca, 10)
+
+diff_C_M
+diff_M_GQT
+diff_M_Met
+diff_M_Gli
+diff_M_Aca
+
+
+#############
+## FIND POS INTER
+
+diff_C_M=diff_C_M[order(rownames(diff_C_M)),]
+diff_M_GQT=diff_M_GQT[order(rownames(diff_M_GQT)),]
+diff_M_Met=diff_M_Met[order(rownames(diff_M_Met)),]
+diff_M_Gli=diff_M_Gli[order(rownames(diff_M_Gli)),]
+diff_M_Aca=diff_M_Aca[order(rownames(diff_M_Aca)),]
+
+
+rev_Mr_GQT = diff_M_GQT[which( diff_M_GQT$logFC<0 & diff_C_M$logFC>0 ),]
+rev_Mr_Met = diff_M_Met[which( diff_M_Met$logFC<0 & diff_C_M$logFC>0 ),]
+rev_Mr_Gli = diff_M_Gli[which( diff_M_Gli$logFC<0 & diff_C_M$logFC>0 ),]
+rev_Mr_Aca = diff_M_Aca[which( diff_M_Aca$logFC<0 & diff_C_M$logFC>0 ),]
+
+rev_Md_GQT = diff_M_GQT[which( diff_M_GQT$logFC>0 & diff_C_M$logFC<0 ),]
+rev_Md_Met = diff_M_Met[which( diff_M_Met$logFC>0 & diff_C_M$logFC<0 ),]
+rev_Md_Gli = diff_M_Gli[which( diff_M_Gli$logFC>0 & diff_C_M$logFC<0 ),]
+rev_Md_Aca = diff_M_Aca[which( diff_M_Aca$logFC>0 & diff_C_M$logFC<0 ),]
+
+sam_Mr_GQT = diff_M_GQT[which( diff_M_GQT$logFC>0 & diff_C_M$logFC>0 ),]
+sam_Mr_Met = diff_M_Met[which( diff_M_Met$logFC>0 & diff_C_M$logFC>0 ),]
+sam_Mr_Gli = diff_M_Gli[which( diff_M_Gli$logFC>0 & diff_C_M$logFC>0 ),]
+sam_Mr_Aca = diff_M_Aca[which( diff_M_Aca$logFC>0 & diff_C_M$logFC>0 ),]
+
+sam_Md_GQT = diff_M_GQT[which( diff_M_GQT$logFC<0 & diff_C_M$logFC<0 ),]
+sam_Md_Met = diff_M_Met[which( diff_M_Met$logFC<0 & diff_C_M$logFC<0 ),]
+sam_Md_Gli = diff_M_Gli[which( diff_M_Gli$logFC<0 & diff_C_M$logFC<0 ),]
+sam_Md_Aca = diff_M_Aca[which( diff_M_Aca$logFC<0 & diff_C_M$logFC<0 ),]
+
+
+nrow(rev_Mr_Aca);nrow(rev_Md_Aca);nrow(sam_Mr_Aca);nrow(sam_Md_Aca)
+
+Out_C_M = diff_C_M
+Out_C_M$Pheno = rownames(Out_C_M)
+
+Out_GQT = rbind(rev_Mr_GQT,rev_Md_GQT,sam_Mr_GQT,sam_Md_GQT)
+Out_GQT$Class = c(rep("rev_Mr_GQT",nrow(rev_Mr_GQT)),
+                  rep("rev_Md_GQT",nrow(rev_Md_GQT)),
+                  rep("sam_Mr_GQT",nrow(sam_Mr_GQT)),
+                  rep("sam_Md_GQT",nrow(sam_Md_GQT))
+)
+Out_GQT$Pheno = rownames(Out_GQT)
+Out_GQT_CM = dplyr::left_join(Out_GQT,Out_C_M ,by="Pheno")
+
+Out_Met = rbind(rev_Mr_Met,rev_Md_Met,sam_Mr_Met,sam_Md_Met)
+Out_Met$Class = c(rep("rev_Mr_Met",nrow(rev_Mr_Met)),
+                  rep("rev_Md_Met",nrow(rev_Md_Met)),
+                  rep("sam_Mr_Met",nrow(sam_Mr_Met)),
+                  rep("sam_Md_Met",nrow(sam_Md_Met))
+)
+Out_Met$Pheno = rownames(Out_Met)
+Out_Met_CM = dplyr::left_join(Out_Met,Out_C_M ,by="Pheno")
+
+
+Out_Gli = rbind(rev_Mr_Gli,rev_Md_Gli,sam_Mr_Gli,sam_Md_Gli)
+Out_Gli$Class = c(rep("rev_Mr_Gli",nrow(rev_Mr_Gli)),
+                  rep("rev_Md_Gli",nrow(rev_Md_Gli)),
+                  rep("sam_Mr_Gli",nrow(sam_Mr_Gli)),
+                  rep("sam_Md_Gli",nrow(sam_Md_Gli))
+)
+Out_Gli$Pheno = rownames(Out_Gli)
+Out_Gli_CM = dplyr::left_join(Out_Gli,Out_C_M ,by="Pheno")
+
+Out_Aca = rbind(rev_Mr_Aca,rev_Md_Aca,sam_Mr_Aca,sam_Md_Aca)
+Out_Aca$Class = c(rep("rev_Mr_Aca",nrow(rev_Mr_Aca)),
+                  rep("rev_Md_Aca",nrow(rev_Md_Aca)),
+                  rep("sam_Mr_Aca",nrow(sam_Mr_Aca)),
+                  rep("sam_Md_Aca",nrow(sam_Md_Aca))
+)
+Out_Aca$Pheno = rownames(Out_Aca)
+Out_Aca_CM = dplyr::left_join(Out_Aca,Out_C_M ,by="Pheno")
+
+R_GQT_CM = Out_GQT_CM;R_GQT_CM =R_GQT_CM [order(R_GQT_CM $Pheno),]
+R_Met_CM = Out_Met_CM;R_Met_CM =R_Met_CM [order(R_Met_CM $Pheno),]
+R_Gli_CM = Out_Gli_CM;R_Gli_CM =R_Gli_CM [order(R_Gli_CM $Pheno),]
+R_Aca_CM = Out_Aca_CM;R_Aca_CM =R_Aca_CM [order(R_Aca_CM $Pheno),]
+
+(R_GQT_CM$Pheno)
+(R_Met_CM$Pheno)
+RevRate_df = data.frame(Phneo         = R_GQT_CM$Pheno, 
+                        RevRate_CMGQT = -R_GQT_CM$logFC.x/R_GQT_CM$logFC.y,
+                        RevRate_CMMat = -R_Met_CM$logFC.x/R_Met_CM$logFC.y,
+                        RevRate_CMGli = -R_Gli_CM$logFC.x/R_Gli_CM$logFC.y,
+                        RevRate_CMAca = -R_Aca_CM$logFC.x/R_Aca_CM$logFC.y
+)
+RevRate_df= RevRate_df[order(RevRate_df$RevRate_CMGQT,RevRate_df$RevRate_CMMat,RevRate_df$RevRate_CMGli,RevRate_df$RevRate_CMAca),]
+
+###############################################################
+
+rownames(rev_Mr_GQT)
+rev_Mr = list(rev_Mr_GQT=rownames(rev_Mr_GQT),
+              rev_Mr_Met=rownames(rev_Mr_Met),
+              rev_Mr_Gli=rownames(rev_Mr_Gli),
+              rev_Mr_Aca=rownames(rev_Mr_Aca) )
+
+rev_Md = list(rev_Md_GQT=rownames(rev_Md_GQT),
+              rev_Md_Met=rownames(rev_Md_Met),
+              rev_Md_Gli=rownames(rev_Md_Gli),
+              rev_Md_Aca=rownames(rev_Md_Aca) )
+
+
+sam_Mr = list(sam_Mr_GQT=rownames(sam_Mr_GQT),
+              sam_Mr_Met=rownames(sam_Mr_Met),
+              sam_Mr_Gli=rownames(sam_Mr_Gli),
+              sam_Mr_Aca=rownames(sam_Mr_Aca) )
+
+sam_Md = list(sam_Md_GQT=rownames(sam_Md_GQT),
+              sam_Md_Met=rownames(sam_Md_Met),
+              sam_Md_Gli=rownames(sam_Md_Gli),
+              sam_Md_Aca=rownames(sam_Md_Aca) )
+
+
+###############################################################
+rev_Mt = list(rev_GQT=c(rownames(rev_Mr_GQT),rownames(rev_Md_GQT)),
+              rev_Met=c(rownames(rev_Mr_Met),rownames(rev_Md_Met)),
+              rev_Gli=c(rownames(rev_Mr_Gli),rownames(rev_Md_Gli)),
+              rev_Aca=c(rownames(rev_Mr_Aca),rownames(rev_Md_Aca))) 
+
+inter <- get.venn.partitions(rev_Mt)
+for (i in 1:nrow(inter)) inter[i,'values'] <- paste(inter[[i,'..values..']], collapse = ', ')
+# View(inter )
+
+print(inter[,1:7])
+inter$values[2]
+
+
+Pos_inter = strsplit(inter$values[2],", ")
+Pos3_Inter =Pos_inter
+####################################################
+
+diff_C_M
+Out_C_M = diff_C_M
+Out_C_M$Pheno = rownames(Out_C_M)
+
+
+CompName = unique(group_list )[!unique(group_list ) %in% c( "C" , "M")]
+CompName[1]
+
+logFC_list = list()
+revtp_list = list()
+revrt_list = list()
+Pheno_list = list()
+
+TotRateSum_c =c()
+RevRateSum_c = c()
+SamRateSum_c =c()
+rev_n_c      = c()
+rev_n_pos_c  = c()
+rev_num_pos_c = c()
+treat_c =       c()
+
+for( i in 1:length(CompName) ){
+  par_MT = Batch_limma_HTC
+  par_MT  = par_MT [,which(group_list %in% c("M",CompName[i]))]
+  par_MT  = par_MT [,-which(colnames(par_MT ) %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))]
+  Remove_value = which(colnames(Batch_limma_HTC )[which(group_list %in% c("M",CompName[i]))] %in% c("Extra_M-5","Extra_M-2","06101_M-3","Extra_C-12","Extra_C-4"))
+  
+  group_MT <- as.factor( make.names(group_list[which(group_list %in% c("M",CompName[i]))][-Remove_value ]))
+    design_MT <- model.matrix(~0+group_MT)
+  colnames(design_MT) = levels(factor(group_MT))
+
+  rownames(design_MT) = colnames(group_MT);design_MT
+
+  par_MT = par_MT[apply(par_MT>0, 1, all),]
+  norm_MT <- voom(par_MT , design_MT, plot = TRUE)
+  fit <- lmFit(norm_MT, design_MT, method = 'ls')
+  contrast <- makeContrasts(paste0("M-", colnames(design_MT)[-which(colnames(design_MT) == "M")]), levels = design_MT);contrast
+  
+  fit2 <- contrasts.fit(fit, contrast);fit2 <- eBayes(fit2)
+  qqt(fit2$t, df = fit2$df.prior+fit2$df.residual, pch = 16, cex = 0.2);abline(0,1)
+  diff_MT <- topTable(fit2, number = Inf, adjust.method = 'fdr');head(diff_MT, 10)
+  diff_MT=diff_MT[order(-abs(diff_MT$logFC),-diff_MT$AveExpr),];head(diff_MT, 10)
+  
+  diff_C_M = diff_C_M[order(rownames(diff_C_M)),]
+  diff_MT  = diff_MT [order(rownames(diff_MT)),]
+
+  Out_MT = diff_MT 
+  Out_MT$"Pheno" = rownames(Out_MT)
+  diff_big= dplyr::left_join(Out_C_M ,Out_MT,by="Pheno")
+  diff_big=diff_big[order(diff_big$Pheno),]
+  diff_big$RevRate = -diff_big$logFC.y/diff_big$logFC.x# T / M
+ 
+  Tot_MT_CM = diff_big
+  Tot_MT_CM = Tot_MT_CM[order(Tot_MT_CM$Pheno),]
+
+  logFC_list[[i]]   = Tot_MT_CM$logFC.y
+
+  revrt_list[[i]]   = Tot_MT_CM$RevRate
+  Pheno_list[[i]]   = Tot_MT_CM$Pheno
+
+  TotRateSum = sum( na.omit(Tot_MT_CM$RevRate))
+  RevRateSum = sum( na.omit(Tot_MT_CM[which(diff_big$RevRate >0),]$RevRate))
+  SamRateSum = sum( na.omit(Tot_MT_CM[which(diff_big$RevRate <0),]$RevRate))
+  rev_n      = nrow(Tot_MT_CM[which(diff_big$RevRate >0),])
+  rev_n_pos  = length(intersect(Tot_MT_CM[which(diff_big$RevRate >0),]$Pheno,Pos3_Inter))
+  rev_num_pos   = sum(na.omit(Tot_MT_CM[which(Tot_MT_CM[which(diff_big$RevRate >0),]$Pheno %in%Pos3_Inter ),]$RevRate))
+  TotRateSum_c  = c(TotRateSum_c,TotRateSum)
+  RevRateSum_c  = c(RevRateSum_c,RevRateSum)
+  SamRateSum_c  = c(SamRateSum_c,SamRateSum)
+  rev_n_c       = c(rev_n_c,rev_n)
+  rev_n_pos_c   = c(rev_n_pos_c,rev_n_pos)
+  rev_num_pos_c = c(rev_num_pos_c,rev_num_pos)
+  treat         = CompName[i]
+  treat_c       = c(treat_c,treat)
+  cat(paste0("This is ",i, " in 65 ","\n"))
+}
+Pheno_df = do.call(cbind,Pheno_list)
+colnames(Pheno_df) = CompName
+head(Pheno_df)
+Pheno_df <-as.data.frame(t(t(Pheno_df )))
+
+
+logFC_df = do.call(cbind,logFC_list)
+colnames(logFC_df) = CompName
+head(logFC_df)
+logFC_df <-as.data.frame(t(t(logFC_df )))
+
+logFC_df$M = ( Tot_MT_CM$logFC.x)#tidyr::replace_na(Tot_MT_CM$logFC.y,0)
+logFC_df$Pheno = Tot_MT_CM$Pheno
+head(logFC_df)
+which(is.na(logFC_df))
+
+revrate_df=  do.call(cbind, revrt_list)
+colnames(revrate_df) = CompName
+revrate_df <-as.data.frame(t(t(revrate_df )))
+head(revrate_df)
+revrate_df$Pheno = Tot_MT_CM$Pheno
+
+logFC_df
+
+revrate_df
+#########################################################
+
+revrate_df[is.na(revrate_df)] =0
+x =rnorm(60)
+revrate_df_p = revrate_df[,-c(1:5)]
+
+
+c1 = c("genistein",	"apigenin",	"puerarin",	"daidzein",	"baicalein",	"wogonin",	"wogonoside",	"baicalin",	"berberine")
+c2 = c("palmatine",	"3’-methoxypuerarin",	"coptisine",	"mirificin",	"daidzin",
+       "chrysin",	"formononetin",	"glycyrrhetinic acid",	"oroxylin A",	"isoliquiritigenin",	"licochalcone A")
+# 
+class(Pos_inter)
+intersect(revrate_df_p$Pheno ,as.vector(Pos3_Inter[[1]]))
+
+Opt.Comb.content.want.fun<-function(x){
+  y <- numeric(3)
+  x=ifelse(x<0.5,0,1)
+  Sav_HODC = na.omit(colnames(revrate_df_p )[which(x ==1)])
+  revrate_df_sav = revrate_df_p[which(revrate_df_p$Pheno %in%Pos3_Inter[[1]] ),which(colnames(revrate_df_p) %in%Sav_HODC )]
+  revrate_df_sav = revrate_df_sav[,order(colnames(revrate_df_sav))]
+  df_sav  = data.frame(CompoundName = colnames( revrate_df_sav ))
+
+  contnet_df = CP_content[which(CP_content$CompoundName %in% Sav_HODC) , ]
+  contnet_df = contnet_df[order( contnet_df$CompoundName),]
+
+  df_sav_content = dplyr::left_join(df_sav,contnet_df,by = "CompoundName")
+  df_sav_content[is.na(df_sav_content)] = min(contnet_df$`Content（%）`)
+  
+  df_ok = t(revrate_df_sav) * ( df_sav_content $`Content（%）`/100)
+
+  revrate_df_sav$Sum = rowSums( t(df_ok), na.rm = T)
+
+  SumContent = sum(CP_content[which(CP_content$CompoundName %in% Sav_HODC) , 2] )
+  wanted_num = sum(ifelse(Sav_HODC%in% c1,1,0)) + 0.3* sum(ifelse(Sav_HODC%in% c2,1,0))
+  y[1]  = -wanted_num
+  
+  y[2]  = get_dist(rbind(revrate_df[which(revrate_df_p$Pheno %in%Pos3_Inter[[1]] ),4],revrate_df_sav$Sum), method = "spearman")
+  y[3]  = -SumContent/sum(x)
+ 
+  return (y)
+}
+
+
+
+set.seed(1234)
+Opt.Comb.content.want<-nsga2(Opt.Comb.content.want.fun ,
+                             idim=60, odim=3,
+                             # constraints = g,
+                             # cdim=1,
+                             generations=100, popsize=100,
+                             # cprob=0.9, cdist=1,
+                             # mprob=0.2, mdist=20,
+                             lower.bounds = c(rep(0,60)), #70.6, 86.6
+                             upper.bounds =  c(rep(1,60)))
+Opt.Comb.content.want
+
+
+Sloution_readable<-function(x,CP_content){
+  x=ifelse(x<0.5,0,1)
+  Sav_HODC = na.omit(colnames(revrate_df_p )[which(x ==1)])
+  SumContent = sum(CP_content[which(CP_content$CompoundName %in% Sav_HODC) , 2] )
+  CompName = paste0( Sav_HODC[order(CP_content[which(CP_content$CompoundName %in% Sav_HODC),2])],collapse = "_")
+  df = data.frame(CompName = CompName,SumContent = SumContent,CompNum = sum(x))
+  return ( df)
+}
+
+df_solu = do.call(rbind,lapply(1:100, function(i) Sloution_readable(Opt.Comb.content.want$par[i,],CP_content)))
+
+df_solu$Sim = Opt.Comb.content.want$value[,2]
+df_solu$WantedScore = Opt.Comb.content.want$value[,1]
+df_solu$AveContent = Opt.Comb.content.want$value[,3]
+
+
+print(df_solu)
+
+################################
+### Contributor: QiMing Luo
+################################
+
